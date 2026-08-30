@@ -349,3 +349,29 @@ def build_chain(stats: dict[int, InstrumentStats],
         source=source,
         session_date=session,
     )
+
+
+def merge_roots(*sessions: dict) -> dict:
+    """Combine per-root loads into one book.
+
+    SPX and SPXW are separate parent symbols and must be ordered
+    separately, but they are ONE dealer book and have to be analysed as
+    one. Keeping them apart is not conservative, it is wrong -- and
+    wrong in a way that changes the sign:
+
+        SPX alone   2025-08-28, 30dte:  +$6.40bn  dealers LONG gamma
+        SPX + SPXW  same session:       -$2.91bn  dealers SHORT gamma
+
+    The weeklies carry the short-dated exposure, and gamma scales as
+    1/sqrt(T), so 329 one-day contracts outweighed the entire 5,764-
+    contract 30-day book. Analysing the standard root by itself does not
+    understate the answer; it inverts it.
+
+    Instrument ids are globally unique across roots, so a plain merge is
+    safe -- but later dicts still win on collision rather than silently
+    keeping the first.
+    """
+    out: dict = {}
+    for session in sessions:
+        out.update(session)
+    return out
