@@ -274,10 +274,17 @@ def load_chains(path: str | Path, *, snapshot: str = "1545",
         if key not in spots:
             ub, ua = _num(row.get(ubid_col)), _num(row.get(uask_col))
             active = _num(row.get("active_underlying_price_1545"))
-            # Prefer the vendor's own active price; fall back to the mid of
-            # the underlying quote. Both can be blank for index roots, where
-            # a distinct bid/ask needs the CGI licence.
-            spot = active or ((ub + ua) / 2.0 if ub > 0 and ua > 0 else 0.0)
+            implied = _num(row.get("implied_underlying_price_1545"))
+            # Order matters, and the last fallback is the one that makes
+            # index data usable at all. Cboe ships underlying bid/ask for
+            # stocks and ETFs but NOT for indices without a CGI licence
+            # ($1k/month), so ^SPX rows can arrive with no direct quote.
+            # The put-call-parity underlying is published regardless, and
+            # for an index it is arguably the better number: it carries
+            # the forward, which is what the options are actually priced
+            # off, rather than the spot index level.
+            spot = active or implied or (
+                (ub + ua) / 2.0 if ub > 0 and ua > 0 else 0.0)
             spots[key] = (spot, ub or None, ua or None)
 
     chains: list[OptionChain] = []

@@ -179,11 +179,44 @@ def test_adjusted_roots_do_not_collide_at_the_same_strike(tmp_path):
     assert len({c.symbol for c in chain}) == 2
 
 
+def test_index_rows_fall_back_to_the_parity_underlying(tmp_path):
+    """^SPX without a CGI licence has no underlying bid/ask at all.
+
+    Cboe ships underlying quotes for stocks and ETFs but not for indices
+    unless you pay $1k/month. The put-call-parity underlying is published
+    regardless, so index data is usable without the licence -- but only if
+    the reader knows to reach for it.
+    """
+    hdr = HEADER.replace(
+        "underlying_ask_1545,",
+        "underlying_ask_1545,implied_underlying_price_1545,")
+    r = row(underlying="SPX", root="SPX", strike=7700.0).split(",")
+    r.insert(17, "7711.76")     # implied_underlying_price_1545
+    r[15] = "0"                 # underlying_bid_1545  -- absent for indices
+    r[16] = "0"                 # underlying_ask_1545
+    r[18] = "0"                 # active_underlying_price_1545 also blank
+    chains = load_chains(write(tmp_path, [",".join(r)], header=hdr))
+    assert len(chains) == 1
+    assert chains[0].spot == pytest.approx(7711.76)
+
+
+def test_active_price_wins_over_parity_when_both_present(tmp_path):
+    """For ETFs both are populated; the vendor's active price is primary."""
+    hdr = HEADER.replace(
+        "underlying_ask_1545,",
+        "underlying_ask_1545,implied_underlying_price_1545,")
+    r = row().split(",")
+    r.insert(17, "999.99")      # parity value, deliberately wrong
+    chains = load_chains(write(tmp_path, [",".join(r)], header=hdr))
+    assert chains[0].spot == pytest.approx(762.60)
+
+
 def test_session_with_no_usable_spot_is_skipped_not_invented(tmp_path):
     r = row().split(",")
     r[17] = "0"     # active_underlying_price_1545
     r[15] = "0"     # underlying_bid_1545
     r[16] = "0"     # underlying_ask_1545
+    # No parity column either -- nothing left to derive a price from.
     assert load_chains(write(tmp_path, [",".join(r)])) == []
 
 
