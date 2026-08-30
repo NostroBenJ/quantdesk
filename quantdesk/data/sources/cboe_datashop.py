@@ -43,6 +43,8 @@ from __future__ import annotations
 import csv
 import gzip
 import io
+import zipfile
+from contextlib import contextmanager
 from datetime import date, datetime, time, timezone
 from pathlib import Path
 from typing import Iterator
@@ -70,6 +72,10 @@ COLUMNS = {
     "ask_1545": "ask_1545",
     "underlying_bid_1545": "underlying_bid_1545",
     "underlying_ask_1545": "underlying_ask_1545",
+    # Present in the delivered files but NOT in the published field list.
+    # It is the underlying implied by put-call parity, and it reads 0.0000
+    # throughout the 2012 sample, so it is recorded and not relied upon.
+    "implied_underlying_price_1545": "implied_underlying_1545",
     "active_underlying_price_1545": "spot_1545",
     "implied_volatility_1545": "iv",
     "delta_1545": "delta",
@@ -85,6 +91,10 @@ COLUMNS = {
     "underlying_ask_eod": "underlying_ask_eod",
     "vwap": "vwap",
     "open_interest": "open_interest",
+    # Also undocumented; empty throughout the 2012 sample. Non-empty marks a
+    # non-standard deliverable, which is exactly when a strike's gamma stops
+    # meaning what the rest of the book's does.
+    "delivery_code": "delivery_code",
 }
 
 #: Columns present only when the Calcs add-on was purchased.
@@ -127,10 +137,37 @@ def _opt_num(raw: str | None) -> float | None:
         return None
 
 
-def _open_text(path: Path):
+def _csv_members(path: Path) -> list[str]:
+    """CSV entries inside a zip. Empty list for non-zip paths."""
+    if path.suffix.lower() != ".zip":
+        return []
+    with zipfile.ZipFile(path) as zf:
+        return [n for n in zf.namelist()
+                if n.lower().endswith(".csv") and not n.endswith("/")]
+
+
+@contextmanager
+def _open_text(path: Path, member: str | None = None):
+    """Text handle for .csv, .csv.gz, or a CSV inside a .zip.
+
+    DataShop delivers zips -- one CSV per archive in practice, though the
+    format does not promise that, so the reader iterates members rather than
+    assuming the first one is the only one.
+    """
+    if path.suffix.lower() == ".zip":
+        with zipfile.ZipFile(path) as zf:
+            name = member or (_csv_members(path) or [None])[0]
+            if name is None:
+                raise ChainError(f"{path.name}: zip contains no .csv entry")
+            with zf.open(name) as raw:
+                yield io.TextIOWrapper(raw, encoding="utf-8", newline="")
+        return
     if path.suffix == ".gz":
-        return io.TextIOWrapper(gzip.open(path, "rb"), encoding="utf-8")
-    return path.open("r", encoding="utf-8", newline="")
+        with gzip.open(path, "rb") as raw:
+            yield io.TextIOWrapper(raw, encoding="utf-8", newline="")
+        return
+    with path.open("r", encoding="utf-8", newline="") as fh:
+        yield fh
 
 
 def _right(raw: str) -> str:
@@ -146,31 +183,33 @@ def _right(raw: str) -> str:
 def read_rows(path: str | Path) -> Iterator[dict[str, str]]:
     """Yield normalised rows. Raises if the header is not what we expect."""
     p = Path(path)
-    with _open_text(p) as fh:
-        reader = csv.DictReader(fh)
-        if reader.fieldnames is None:
-            raise ChainError(f"{p.name}: no header row")
-        present = {_norm(f) for f in reader.fieldnames}
-        required = {"underlying_symbol", "quote_date", "expiration", "strike",
-                    "option_type", "open_interest"}
-        missing = required - present
-        if missing:
-            raise ChainError(
-                f"{p.name}: missing required columns {sorted(missing)}. "
-                "The DataShop layout may have changed - check the file spec "
-                "before adapting this reader, because a silently renamed "
-                "column reads as zero.")
-        for row in reader:
-            yield {_norm(k): v for k, v in row.items() if k is not None}
+    members = _csv_members(p) or [None]
+    for member in members:
+        with _open_text(p, member) as fh:
+            reader = csv.DictReader(fh)
+            if reader.fieldnames is None:
+                raise ChainError(f"{p.name}: no header row")
+            present = {_norm(f) for f in reader.fieldnames}
+            required = {"underlying_symbol", "quote_date", "expiration",
+                        "strike", "option_type", "open_interest"}
+            missing = required - present
+            if missing:
+                raise ChainError(
+                    f"{p.name}: missing required columns {sorted(missing)}. "
+                    "The DataShop layout may have changed - check the file "
+                    "spec before adapting this reader, because a silently "
+                    "renamed column reads as zero.")
+            for row in reader:
+                yield {_norm(k): v for k, v in row.items() if k is not None}
 
 
 def has_calcs(path: str | Path) -> bool:
     """Whether the Calcs add-on columns are present in this file."""
     p = Path(path)
-    with _open_text(p) as fh:
-        header = csv.reader(fh)
+    member = (_csv_members(p) or [None])[0]
+    with _open_text(p, member) as fh:
         try:
-            names = {_norm(c) for c in next(header)}
+            names = {_norm(c) for c in next(csv.reader(fh))}
         except StopIteration:
             return False
     return all(c in names for c in CALCS_COLUMNS)

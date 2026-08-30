@@ -12,6 +12,7 @@ pair silently gives you greeks from one time and prices from another.
 from __future__ import annotations
 
 import gzip
+import zipfile
 from datetime import date
 
 import pytest
@@ -78,6 +79,54 @@ def test_reads_a_basic_file(tmp_path):
     assert c.open_interest == pytest.approx(1000.0)
     assert c.iv == pytest.approx(0.18)
     assert c.vendor_gamma == pytest.approx(0.0123)
+
+
+def test_zip_is_transparent(tmp_path):
+    """DataShop ships .zip, one CSV inside. Discovered from a real order --
+    the published spec does not mention the container at all."""
+    plain = write(tmp_path, [row()], name="a.csv")
+    zpath = tmp_path / "UnderlyingOptionsEODCalcs_2026-08.zip"
+    with zipfile.ZipFile(zpath, "w") as zf:
+        zf.write(plain, arcname="UnderlyingOptionsEODCalcs_2026-08.csv")
+    assert has_calcs(zpath)
+    chains = load_chains(zpath)
+    assert len(chains) == 1
+    assert chains[0].spot == pytest.approx(762.60)
+    assert chains[0].contracts[0].vendor_gamma == pytest.approx(0.0123)
+
+
+def test_zip_with_several_members_reads_all_of_them(tmp_path):
+    """The format does not promise one CSV per archive, so do not assume it."""
+    a = write(tmp_path, [row(quote="2026-08-20")], name="a.csv")
+    b = write(tmp_path, [row(quote="2026-08-21")], name="b.csv")
+    zpath = tmp_path / "multi.zip"
+    with zipfile.ZipFile(zpath, "w") as zf:
+        zf.write(a, arcname="day1.csv")
+        zf.write(b, arcname="day2.csv")
+    assert len(load_chains(zpath)) == 2
+
+
+def test_zip_without_a_csv_raises(tmp_path):
+    zpath = tmp_path / "empty.zip"
+    with zipfile.ZipFile(zpath, "w") as zf:
+        zf.writestr("readme.txt", "no data here")
+    with pytest.raises(ChainError, match="no .csv entry"):
+        list(read_rows(zpath))
+
+
+def test_undocumented_columns_do_not_break_the_reader(tmp_path):
+    """Real files carry implied_underlying_price_1545 and delivery_code,
+    neither of which is in the published field list. Extra columns must be
+    inert -- the reader looks up by name, so they are."""
+    hdr = HEADER.replace(
+        "underlying_ask_1545,",
+        "underlying_ask_1545,implied_underlying_price_1545,") + ",delivery_code"
+    r = row().split(",")
+    r.insert(17, "0.0000")      # implied_underlying_price_1545
+    r.append("")                # delivery_code
+    chains = load_chains(write(tmp_path, [",".join(r)], header=hdr))
+    assert len(chains) == 1
+    assert chains[0].spot == pytest.approx(762.60)
 
 
 def test_gzip_is_transparent(tmp_path):
