@@ -178,14 +178,44 @@ def implied_vol(price: float, S: float, K: float, T: float, r: float,
     return 0.5 * (lo + hi)
 
 
+#: A solved vol outside this band is a quote artifact, not a market price.
+#: Index options do not trade at 1% or 400% implied vol; those solves come
+#: from stale wings and one-tick offers. The band is wide on purpose -- it
+#: is a sanity filter, not a view.
+MIN_PLAUSIBLE_IV = 0.02
+MAX_PLAUSIBLE_IV = 3.00
+
+
 def solve_chain_iv(chain, r: float = RISK_FREE, q: float = DIVIDEND_YIELD,
-                   max_dte: int | None = None):
+                   max_dte: int | None = None,
+                   require_bid: bool = True,
+                   min_iv: float = MIN_PLAUSIBLE_IV,
+                   max_iv: float = MAX_PLAUSIBLE_IV):
     """Return a copy of `chain` with IV solved from each contract's mid.
 
     For feeds that carry prices but no greeks -- Databento's OPRA
-    statistics, for instance. Contracts whose price is unreachable keep
-    iv=0.0 and are then skipped by `gamma_profile`, which is the honest
-    outcome: better a missing strike than a fabricated vol.
+    statistics, for instance.
+
+    TWO FILTERS, BOTH LEARNED THE HARD WAY. Gamma is proportional to 1/sigma,
+    so a vol that is too small by a factor of forty inflates that strike's
+    gamma by the same factor. In a sum weighted by open interest, one such
+    contract can dominate the entire book.
+
+    That is not hypothetical. On 2025-09-02 a single 6450 call, one day from
+    expiry, quoted bid 0.00 / offer 0.10, solved to 0.35% vol and produced
+    $65.7bn of an $88bn total -- roughly eight times the whole 1DTE book on
+    a normal session. Two contracts out of 1,152 inverted the sign of the
+    day's reading.
+
+    1. `require_bid`: a contract with no bid has no price, only a one-tick
+       offer. There is no vol information in it. This is the same judgement
+       `OptionContract.quality` records as Quality.NO_BID.
+    2. `min_iv` / `max_iv`: reject solves outside a plausible band even when
+       a two-sided quote exists, because a wide or stale market can still
+       produce an absurd root.
+
+    Rejected contracts keep iv=0.0 and are skipped by `gamma_profile` --
+    better a missing strike than a fabricated one.
     """
     from dataclasses import replace
 
@@ -194,12 +224,18 @@ def solve_chain_iv(chain, r: float = RISK_FREE, q: float = DIVIDEND_YIELD,
     for c in chain.contracts:
         mid = c.mid
         T = c.time_to_expiry(as_of)
-        if mid and mid > 0 and T > 0 and (
-                max_dte is None or (c.expiry - as_of).days <= max_dte):
-            sigma = implied_vol(mid, chain.spot, c.strike, T, r, q, c.right)
-            out.append(replace(c, iv=sigma if sigma else 0.0))
-        else:
-            out.append(c)
+        eligible = (
+            mid and mid > 0 and T > 0
+            and (not require_bid or c.bid > 0)
+            and (max_dte is None or (c.expiry - as_of).days <= max_dte)
+        )
+        if not eligible:
+            out.append(replace(c, iv=0.0))
+            continue
+        sigma = implied_vol(mid, chain.spot, c.strike, T, r, q, c.right)
+        if sigma is None or not (min_iv <= sigma <= max_iv):
+            sigma = 0.0
+        out.append(replace(c, iv=sigma))
     return replace(chain, contracts=tuple(out))
 
 
@@ -326,14 +362,37 @@ def zero_gamma(chain: OptionChain, *,
     +/-15% band. None means "no flip here", never "flip at zero".
     """
     kw = dict(convention=convention, max_dte=max_dte, r=r, q=q)
-    lo, hi = chain.spot * lo_mult, chain.spot * hi_mult
-    f_lo, f_hi = net_gex_at(chain, lo, **kw), net_gex_at(chain, hi, **kw)
-    if f_lo == 0.0:
-        return lo
-    if f_hi == 0.0:
-        return hi
-    if (f_lo > 0) == (f_hi > 0):
+
+    # SCAN FIRST, THEN BISECT. Testing only the two endpoints assumes they
+    # straddle the crossing, and for a SHORT-DATED book they do not: move
+    # spot 15% either way and every contract is far enough from its strike
+    # that gamma decays to ~0 -- from the SAME side. The endpoints then
+    # agree in sign, and an endpoint-only test reports "no flip" for a book
+    # whose flip is sitting two points from spot.
+    #
+    # This was invisible on 30-day books, where gamma is still material at
+    # the edges of the bracket, and appeared the moment 7DTE was measured.
+    #
+    # Scanning also finds the crossing NEAREST SPOT when a book has several,
+    # which is the one a signal would trade.
+    steps = 60
+    lo_edge, hi_edge = chain.spot * lo_mult, chain.spot * hi_mult
+    width = (hi_edge - lo_edge) / steps
+    grid = [lo_edge + k * width for k in range(steps + 1)]
+    values = [net_gex_at(chain, x, **kw) for x in grid]
+
+    brackets = []
+    for (xa, fa), (xb, fb) in zip(zip(grid, values), zip(grid[1:], values[1:])):
+        if fa == 0.0:
+            return xa
+        if (fa > 0) != (fb > 0):
+            brackets.append((xa, fa, xb, fb))
+    if not brackets:
         return None
+
+    # Nearest to spot, measured from the bracket's midpoint.
+    lo, f_lo, hi, f_hi = min(
+        brackets, key=lambda b: abs(0.5 * (b[0] + b[2]) - chain.spot))
 
     for _ in range(max_iter):
         mid = 0.5 * (lo + hi)
