@@ -33,9 +33,12 @@ def collect(inputs: list[str]) -> list[Path]:
     for item in inputs:
         p = Path(item)
         if p.is_dir():
+            # .zip is what DataShop actually delivers. The published spec
+            # never mentions a container, so it was missing here until a
+            # real order arrived and this found nothing.
             files.extend(sorted(
                 q for q in p.rglob("*")
-                if q.suffix in (".csv", ".gz") and q.is_file()))
+                if q.suffix.lower() in (".csv", ".gz", ".zip") and q.is_file()))
         elif p.is_file():
             files.append(p)
         else:
