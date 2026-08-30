@@ -76,6 +76,47 @@ def welch(a: list[float], b: list[float]) -> dict | None:
             "n_a": sa["n"], "n_b": sb["n"]}
 
 
+def overlap_corrected(xs: list[float], horizon: int) -> dict | None:
+    """Stats for OVERLAPPING windows, with an honest standard error.
+
+    Non-overlapping sampling is safe but wasteful: at a 63-day horizon it
+    turns 3,298 sessions into 52 observations, and the confidence interval
+    then only excludes effects nobody claims exist.
+
+    Overlapping windows use every session, which estimates the MEAN far
+    better. They do not give more independent information, so the standard
+    error must be widened by sqrt(horizon) -- adjacent windows share
+    horizon-1 periods, and dividing by sqrt(n) instead of sqrt(n/horizon)
+    is precisely the error that makes noise look significant.
+
+    This is the same correction the VRP study applies, restated here so a
+    screen can use it without importing the study.
+    """
+    s = stats(xs)
+    if s is None:
+        return None
+    n_indep = max(len(xs) / float(horizon), 1.0)
+    se = s["sd"] / math.sqrt(n_indep)
+    return {"n": s["n"], "n_indep": n_indep, "mean": s["mean"], "sd": s["sd"],
+            "se": se, "t": s["mean"] / se if se else float("nan"),
+            "lo": s["mean"] - 1.96 * se, "hi": s["mean"] + 1.96 * se,
+            "naive_t": s["t"]}
+
+
+def welch_overlap(a: list[float], b: list[float], horizon: int) -> dict | None:
+    """Difference of two overlapping-window means, both SEs corrected."""
+    sa = overlap_corrected(a, horizon)
+    sb = overlap_corrected(b, horizon)
+    if sa is None or sb is None:
+        return None
+    se = math.sqrt(sa["se"] ** 2 + sb["se"] ** 2)
+    diff = sa["mean"] - sb["mean"]
+    return {"diff": diff, "se": se, "t": diff / se if se else float("nan"),
+            "lo": diff - 1.96 * se, "hi": diff + 1.96 * se,
+            "n_a": sa["n"], "n_b": sb["n"],
+            "indep_a": sa["n_indep"], "indep_b": sb["n_indep"]}
+
+
 class Screen:
     """Counts every test in one screen and corrects across all of them."""
 

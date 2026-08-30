@@ -149,6 +149,42 @@ def forward_realised_vol(rows: list[dict], i: int, horizon: int) -> float | None
     return 100.0 * math.sqrt(var) * math.sqrt(252.0)
 
 
+def trailing_realised_vol(rows: list[dict], i: int, lookback: int) -> float | None:
+    """Annualised realised vol over the `lookback` sessions ENDING at i.
+
+    The forward version measures a premium after the fact; this is the one
+    a signal may use, because at i's close only the past is known. The two
+    are easy to confuse and the confusion is invisible in the output -- a
+    VRP built from forward RV predicts returns beautifully and cannot be
+    traded, because it reads the answer key.
+    """
+    if i - lookback < 0:
+        return None
+    rets = [rows[j + 1]["spy"] / rows[j]["spy"] - 1.0
+            for j in range(i - lookback, i)]
+    if len(rets) < 2:
+        return None
+    mean = sum(rets) / len(rets)
+    var = sum((r - mean) ** 2 for r in rets) / (len(rets) - 1)
+    return 100.0 * math.sqrt(var) * math.sqrt(252.0)
+
+
+def variance_risk_premium(rows: list[dict], i: int,
+                          lookback: int = 21) -> float | None:
+    """VIX minus TRAILING realised vol, in vol points, knowable at i.
+
+    Bollerslev, Tauchen & Zhou (2009) show the variance risk premium
+    predicts forward equity returns. Their construction proxies expected
+    variance with recent realised variance, which is what makes the
+    quantity causal -- and the reason this uses `trailing_realised_vol`
+    and never the forward one.
+    """
+    rv = trailing_realised_vol(rows, i, lookback)
+    if rv is None:
+        return None
+    return rows[i]["vix"] - rv
+
+
 def non_overlapping(rows: list[dict], horizon: int, start: int = 0):
     """Indices spaced `horizon` apart, so observations are independent.
 
@@ -210,6 +246,31 @@ def verify() -> bool:
                forward_realised_vol(mixed, 6, 5) == 0.0)
     check_true("and the volatile stretch does read high",
                forward_realised_vol(mixed, 0, 5) > 100.0)
+
+    print("\ntrailing_realised_vol never reads the future")
+    # Volatile only AFTER index 6; trailing vol at 6 must be ~0.
+    later = ([{"date": "d%d" % k, "spy": 100.0, "vix": 15.0, "vix3m": 18.0}
+              for k in range(7)]
+             + [{"date": "d%d" % k, "spy": 100.0 + (10 if k % 2 else -10),
+                 "vix": 15.0, "vix3m": 18.0} for k in range(7, 14)])
+    check_true("future volatility does not leak backward",
+               trailing_realised_vol(later, 6, 5) == 0.0)
+    check_true("and it is visible once it has happened",
+               trailing_realised_vol(later, 13, 5) > 100.0)
+    check_true("not enough history -> None",
+               trailing_realised_vol(later, 2, 5) is None)
+    # Trailing and forward must disagree across a regime change, or one of
+    # them is reading the wrong window.
+    check_true("trailing and forward are genuinely different windows",
+               trailing_realised_vol(later, 7, 5)
+               != forward_realised_vol(later, 7, 5))
+
+    print("\nvariance_risk_premium is causal and signed correctly")
+    calm = [{"date": "d%d" % k, "spy": 100.0, "vix": 20.0, "vix3m": 22.0}
+            for k in range(30)]
+    # Flat spot -> trailing RV 0 -> VRP is the whole VIX level.
+    check("flat tape gives VRP = VIX", variance_risk_premium(calm, 25), 20.0)
+    check_true("no history -> None", variance_risk_premium(calm, 3) is None)
 
     print("\nnon_overlapping windows really are disjoint")
     idx = list(non_overlapping(rows, 3))
