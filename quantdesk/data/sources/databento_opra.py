@@ -199,3 +199,153 @@ def session_summary(stats: dict[int, InstrumentStats]) -> dict:
         "oi_session": sorted(oi_sessions),
         "price_session": sorted(px_sessions),
     }
+
+
+# ---------------------------------------------------------- definitions
+
+
+@dataclass(frozen=True)
+class Instrument:
+    """What an instrument_id actually refers to."""
+
+    instrument_id: int
+    raw_symbol: str
+    asset: str
+    strike: float
+    expiration: dt.date
+    right: str          # "C" or "P"
+
+
+def load_definitions(path: str | Path) -> dict[int, Instrument]:
+    """One day's definition file -> {instrument_id: Instrument}.
+
+    Strikes are 1e-9 fixed point like every other price. `instrument_class`
+    is a single char C/P for vanilla options; anything else (spreads, legs)
+    is skipped rather than guessed at.
+    """
+    import databento as db                      # presentation-layer import
+
+    out: dict[int, Instrument] = {}
+    for r in db.DBNStore.from_file(str(path)):
+        klass = str(getattr(r, "instrument_class", ""))
+        right = klass[-1].upper() if klass else ""
+        if right not in ("C", "P"):
+            continue
+        strike_raw = int(r.strike_price)
+        exp_raw = int(r.expiration)
+        if not _defined(strike_raw) or not _defined(exp_raw):
+            continue
+        out[int(r.instrument_id)] = Instrument(
+            instrument_id=int(r.instrument_id),
+            raw_symbol=str(r.raw_symbol),
+            asset=str(r.asset),
+            strike=strike_raw * PRICE_SCALE,
+            expiration=dt.datetime.fromtimestamp(
+                exp_raw / 1e9, dt.timezone.utc).date(),
+            right=right,
+        )
+    return out
+
+
+def implied_spot(stats: dict[int, InstrumentStats],
+                 defs: dict[int, Instrument],
+                 as_of: dt.date,
+                 r: float = 0.042,
+                 max_dte: int = 60) -> float | None:
+    """Recover the underlying from put-call parity.
+
+    SPX definitions carry no index level, and Cboe charges $1k/month for a
+    distinct index quote. Parity needs neither: for one expiry and strike,
+
+        C - P = S*exp(-qT) - K*exp(-rT)
+
+    so S is implied by the call/put price difference. For an index this is
+    arguably the better number anyway -- it is the FORWARD the options are
+    actually priced off, not the spot index print, and the two differ by
+    carry.
+
+    Estimated at the strike where |C - P| is smallest (nearest the forward,
+    where both legs are liquid and the parity residual is least sensitive
+    to a stale quote), using the nearest expiry with enough strikes.
+    """
+    import math
+
+    by_expiry: dict[dt.date, dict[float, dict[str, float]]] = {}
+    for iid, st in stats.items():
+        d = defs.get(iid)
+        mid = st.mid
+        if d is None or mid is None or st.crossed:
+            continue
+        dte = (d.expiration - as_of).days
+        if dte <= 0 or dte > max_dte:
+            continue
+        by_expiry.setdefault(d.expiration, {}).setdefault(
+            d.strike, {})[d.right] = mid
+
+    best: tuple[float, float] | None = None      # (abs(C-P), implied spot)
+    for expiry, strikes in by_expiry.items():
+        pairs = {k: v for k, v in strikes.items() if "C" in v and "P" in v}
+        if len(pairs) < 3:
+            continue
+        T = max((expiry - as_of).days, 1) / 365.0
+        for strike, legs in pairs.items():
+            diff = legs["C"] - legs["P"]
+            spot = diff + strike * math.exp(-r * T)
+            if spot <= 0:
+                continue
+            if best is None or abs(diff) < best[0]:
+                best = (abs(diff), spot)
+    return best[1] if best else None
+
+
+def build_chain(stats: dict[int, InstrumentStats],
+                defs: dict[int, Instrument],
+                session: dt.date,
+                spot: float | None = None,
+                source: str = "databento-opra"):
+    """Join statistics and definitions into an OptionChain.
+
+    NOTE ON WHICH SESSION THIS IS. Open interest in a file dated D belongs
+    to D-1 (see rule 2), so `session` should be the OI's session, and the
+    prices carried alongside are D's. They are one day apart by
+    construction. This is recorded in `source` so a study can see it.
+    """
+    from ..options import OptionChain, OptionContract
+
+    if spot is None:
+        spot = implied_spot(stats, defs, session)
+    if not spot or spot <= 0:
+        return None
+
+    contracts = []
+    for iid, st in stats.items():
+        d = defs.get(iid)
+        if d is None or not st.open_interest:
+            continue
+        contracts.append(OptionContract(
+            symbol=d.raw_symbol.strip() or str(iid),
+            underlying=d.asset,
+            expiry=d.expiration,
+            strike=d.strike,
+            right=d.right,
+            bid=st.bid or 0.0,
+            ask=st.offer or 0.0,
+            last=st.close or 0.0,
+            volume=0.0,
+            open_interest=st.open_interest,
+            # No vendor IV or greeks in this feed -- we solve and compute
+            # our own, which is the design anyway.
+            iv=0.0,
+        ))
+    if not contracts:
+        return None
+
+    return OptionChain(
+        underlying=contracts[0].underlying,
+        spot=spot,
+        fetched_at=dt.datetime.combine(
+            session, dt.time(16, 15), tzinfo=dt.timezone.utc),
+        contracts=tuple(contracts),
+        source=source,
+        session_date=session,
+    )

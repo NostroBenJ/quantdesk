@@ -123,6 +123,86 @@ def gex_dollars(gamma: float, open_interest: float, spot: float,
     return gamma * open_interest * multiplier * spot * spot * 0.01
 
 
+def _norm_cdf(x: float) -> float:
+    return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+
+def bs_price(S: float, K: float, T: float, r: float, sigma: float,
+             q: float = 0.0, right: str = "C") -> float:
+    """Black-Scholes-Merton price. Needed only to invert for vol."""
+    if T <= 0 or sigma <= 0 or S <= 0 or K <= 0:
+        # Intrinsic. A zero-vol or expired option is worth its payoff.
+        return max(0.0, (S - K) if right == "C" else (K - S))
+    sq = sigma * math.sqrt(T)
+    d1 = (math.log(S / K) + (r - q + 0.5 * sigma * sigma) * T) / sq
+    d2 = d1 - sq
+    if right == "C":
+        return S * math.exp(-q * T) * _norm_cdf(d1) - K * math.exp(-r * T) * _norm_cdf(d2)
+    return K * math.exp(-r * T) * _norm_cdf(-d2) - S * math.exp(-q * T) * _norm_cdf(-d1)
+
+
+def implied_vol(price: float, S: float, K: float, T: float, r: float,
+                q: float = 0.0, right: str = "C",
+                lo: float = 1e-4, hi: float = 5.0,
+                tol: float = 1e-8, max_iter: int = 100) -> float | None:
+    """Invert Black-Scholes for sigma. Bisection: slower, never diverges.
+
+    Returns None rather than a number when the price is outside the model's
+    reachable range -- below intrinsic, or above the no-arbitrage cap. Those
+    are common in a full chain (stale quotes, deep wings) and returning a
+    bracket endpoint would quietly fill the surface with 0.0001 and 5.0,
+    which then propagate into gamma as enormous or vanishing values.
+
+    Convergence is on the WIDTH OF THE VOL BRACKET, not on price error. A
+    deep-OTM option has vega near zero, so a tight price tolerance is
+    satisfied by a huge range of vols -- the same trap the research track's
+    implied_vol hit and fixed.
+    """
+    if price <= 0 or T <= 0 or S <= 0 or K <= 0:
+        return None
+    intrinsic = max(0.0, (S - K) if right == "C" else (K - S))
+    if price < intrinsic - 1e-9:
+        return None
+    p_lo = bs_price(S, K, T, r, lo, q, right)
+    p_hi = bs_price(S, K, T, r, hi, q, right)
+    if not (p_lo - 1e-9 <= price <= p_hi + 1e-9):
+        return None                       # unreachable: no root in bracket
+    for _ in range(max_iter):
+        mid = 0.5 * (lo + hi)
+        if hi - lo < tol:
+            return mid
+        if bs_price(S, K, T, r, mid, q, right) < price:
+            lo = mid
+        else:
+            hi = mid
+    return 0.5 * (lo + hi)
+
+
+def solve_chain_iv(chain, r: float = RISK_FREE, q: float = DIVIDEND_YIELD,
+                   max_dte: int | None = None):
+    """Return a copy of `chain` with IV solved from each contract's mid.
+
+    For feeds that carry prices but no greeks -- Databento's OPRA
+    statistics, for instance. Contracts whose price is unreachable keep
+    iv=0.0 and are then skipped by `gamma_profile`, which is the honest
+    outcome: better a missing strike than a fabricated vol.
+    """
+    from dataclasses import replace
+
+    as_of = chain.as_of_date
+    out = []
+    for c in chain.contracts:
+        mid = c.mid
+        T = c.time_to_expiry(as_of)
+        if mid and mid > 0 and T > 0 and (
+                max_dte is None or (c.expiry - as_of).days <= max_dte):
+            sigma = implied_vol(mid, chain.spot, c.strike, T, r, q, c.right)
+            out.append(replace(c, iv=sigma if sigma else 0.0))
+        else:
+            out.append(c)
+    return replace(chain, contracts=tuple(out))
+
+
 # ------------------------------------------------------------------ profile
 
 
