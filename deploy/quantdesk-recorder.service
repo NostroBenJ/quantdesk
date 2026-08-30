@@ -1,0 +1,32 @@
+[Unit]
+Description=quantdesk options chain recorder (one-shot)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=quantdesk
+WorkingDirectory=/opt/quantdesk
+ExecStart=/opt/quantdesk/.venv/bin/python -m quantdesk.data.recorder SPY
+
+# The recorder writes health.json on failure too, so a non-zero exit is a
+# signal rather than a silence. Exit 2 means "recorded but the data looked
+# wrong" - still a success for the timer, but visible in the journal.
+SuccessExitStatus=0 2
+
+# It is a 1-second job. If it hangs, something is wrong with the network, and
+# a hung one-shot blocks the next scheduled run.
+TimeoutStartSec=120
+
+StandardOutput=journal
+StandardError=journal
+
+# Hardening: this process reads a public HTTP endpoint and writes one directory.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/quantdesk/data
+
+[Install]
+WantedBy=multi-user.target

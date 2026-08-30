@@ -1,0 +1,26 @@
+[Unit]
+Description=Run the quantdesk chain recorder on the session schedule
+
+[Timer]
+# Times are UTC. US equity RTH is 13:30-20:00 UTC (14:30-21:00 during EST).
+#
+#   12:45  pre-market  - yesterday's settled OI, before today's flow
+#   17:00  midday      - intraday positioning
+#   21:15  post-close  - the settled snapshot that matters most
+#
+# Three a day is plenty: open interest updates once daily after the close, so
+# more frequent polling adds intraday quote detail, not more OI history.
+OnCalendar=Mon..Fri 12:45 UTC
+OnCalendar=Mon..Fri 17:00 UTC
+OnCalendar=Mon..Fri 21:15 UTC
+
+# THE FIX FOR THE FAILURE THAT KILLED THE LAST PIPELINE. If the machine was
+# down or asleep at the scheduled time, run as soon as it is back rather than
+# skipping the session silently.
+Persistent=true
+
+# Avoid hitting CBOE at the same second as everyone else's cron.
+RandomizedDelaySec=180
+
+[Install]
+WantedBy=timers.target

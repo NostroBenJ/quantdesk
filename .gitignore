@@ -1,0 +1,15 @@
+data/*.sqlite
+logs/
+__pycache__/
+*.pyc
+.pytest_cache/
+vendor/
+research/notes/_raw_*
+
+# Backtest output. Regenerable, and ~2.4MB per run -- it would dominate the
+# history within a month.
+runs/
+
+# Third-party papers. Copyrighted, ~9MB, and not ours to redistribute.
+# The reading list lives in research/notes; the PDFs stay local.
+research/papers/

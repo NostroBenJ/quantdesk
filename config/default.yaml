@@ -1,0 +1,92 @@
+# quantdesk default configuration.
+#
+# Nothing in the codebase hardcodes a strategy parameter. Override any of this
+# with an account file: Config.from_files("config/default.yaml", "config/accounts/x.yaml")
+
+data:
+  store_path: "data/bars.sqlite"
+  # DROP is the only partial-bar policy that is safe by construction. Change it
+  # to keep_labelled only for live trading, where you cannot wait for the close.
+  partial_bar_policy: drop
+  default_source: yahoo
+
+  sources:
+    yahoo:
+      # Yahoo applies split/dividend adjustment retroactively. Set false if you
+      # need the prices that actually printed at the time.
+      auto_adjust: true
+      max_intraday_history_days: 30
+
+instrument:
+  # Defaults describe SPY. MNQ is in config/accounts/prop_firm_template.yaml.
+  symbol: SPY
+  asset_class: etf
+  multiplier: 1.0
+  tick_size: 0.01
+  allow_fractional: false
+
+timeframe:
+  label: "5m"
+  # One RTH session in seconds. If you trade the overnight globex session,
+  # raise this or every annualised number will be wrong.
+  seconds_per_session: 23400
+  sessions_per_year: 252
+
+backtest:
+  initial_equity: 100000.0
+  volatility_lookback: 20
+  signal_lookback: 200
+  flatten_at_end: true
+
+costs:
+  commission:
+    per_unit: 0.0
+    per_trade_minimum: 0.0
+    exchange_fee_per_unit: 0.0
+    percent_of_notional: 0.0
+
+  slippage:
+    # Half-spread as a fraction of the bar's own volatility. This is the single
+    # largest source of error in any net P&L this system reports, because free
+    # data carries no bid/ask. Calibrate against real fills as soon as you have any.
+    spread_vol_fraction: 0.15
+    min_half_spread_ticks: 0.5
+    impact_coefficient: 0.5
+    max_participation: 0.10
+
+  # Cost multiples swept by the sensitivity report. The 0.0 row is the gross
+  # curve, kept adjacent to the 1.0 row on purpose.
+  sensitivity_multiples: [0.0, 0.5, 1.0, 1.5, 2.0, 3.0]
+
+walk_forward:
+  train_size: 2000
+  test_size: 500
+  # Must be >= the longest feature lookback in the strategy, or in-sample data
+  # leaks across the seam into the first bars of every test window.
+  embargo: 200
+  anchored: false
+
+graduation:
+  # A strategy must clear all of these to move from backtest to paper.
+  min_trades: 30
+  min_profit_factor: 1.0
+  min_edge_to_cost_ratio: 2.0
+  min_breakeven_cost_multiple: 1.5
+  min_walk_forward_degradation: 0.5
+  min_profitable_window_fraction: 0.5
+
+  # Paper -> live. Set min_paper_trades yourself; the number is a statement about
+  # how much evidence you need, and nobody else can pick it for you.
+  min_paper_trades: null
+  require_human_signoff: true
+
+logging:
+  directory: "logs"
+  obsidian_export_path: null
+
+narrative:
+  enabled: false
+  model: "claude-opus-5"
+  max_tokens: 1024
+  # The narrator NEVER makes a trading decision. It reads state and explains it.
+  advisory_only: true

@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>quantdesk · research review</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">quantdesk <span>· research review</span></div>
+  <select id="runSelect" title="Evaluation runs, newest first"></select>
+  <button id="refreshBtn" title="Re-read the run files from disk">&#8635; Reload</button>
+  <div class="spacer"></div>
+  <div class="stamp" id="runStamp">&mdash;</div>
+</div>
+
+<div class="statbar" id="statbar">
+  <div class="stat">
+    <label>Verdict</label>
+    <div class="v grade" id="sbGrade">&mdash;</div>
+    <div class="sub" id="sbGate">&mdash;</div>
+  </div>
+  <div class="stat">
+    <label>Net PF</label>
+    <div class="v" id="sbNetPf">&mdash;</div>
+    <div class="sub" id="sbGrossPf">gross &mdash;</div>
+  </div>
+  <div class="stat">
+    <label>Trades</label>
+    <div class="v" id="sbTrades">&mdash;</div>
+    <div class="sub" id="sbSample">&mdash;</div>
+  </div>
+  <div class="stat">
+    <label>Edge / cost</label>
+    <div class="v" id="sbEdgeCost">&mdash;</div>
+    <div class="sub">need &ge; 2.00</div>
+  </div>
+  <div class="stat">
+    <label>Breakeven cost</label>
+    <div class="v" id="sbBreakeven">&mdash;</div>
+    <div class="sub">need &ge; 1.50&times;</div>
+  </div>
+  <div class="stat">
+    <label>OOS windows</label>
+    <div class="v" id="sbWindows">&mdash;</div>
+    <div class="sub" id="sbDegradation">&mdash;</div>
+  </div>
+  <div class="stat">
+    <label>Max drawdown</label>
+    <div class="v" id="sbDD">&mdash;</div>
+    <div class="sub" id="sbSharpe">&mdash;</div>
+  </div>
+</div>
+
+<div class="grid">
+
+  <section class="panel col-5">
+    <h2>Verdict <span class="note" id="verdictNote"></span></h2>
+    <div class="body">
+      <ul class="reasons" id="reasons"><li class="muted">Loading&hellip;</li></ul>
+    </div>
+  </section>
+
+  <section class="panel col-3">
+    <h2>Gross vs net <span class="note">the gap is the finding</span></h2>
+    <div class="body">
+      <div class="compare" id="compare"></div>
+    </div>
+  </section>
+
+  <section class="panel col-4">
+    <h2>Execution <span class="note">fills, not intentions</span></h2>
+    <div class="body flush">
+      <table id="execTable"><tbody></tbody></table>
+    </div>
+  </section>
+
+  <section class="panel col-7">
+    <h2>Cost sensitivity <span class="note" id="costNote">slippage multiple &rarr; profit factor</span></h2>
+    <div class="body flush">
+      <table id="costTable">
+        <thead><tr>
+          <th class="num">cost &times;</th><th class="num">PF</th>
+          <th style="width:34%">vs 1.00</th>
+          <th class="num">net P&amp;L</th><th class="num">expectancy</th><th class="num">costs</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+      <p class="chart-fallback" style="padding:8px 12px;text-align:left;font-size:11px">
+        The multiple scales <b>slippage only</b> &mdash; commission is known exactly,
+        so the 0.00 row still carries commission and is gross of slippage, not free.
+      </p>
+    </div>
+  </section>
+
+  <section class="panel col-5">
+    <h2>Module ledger <span class="note">which of these is carrying the rest</span></h2>
+    <div class="body flush">
+      <table id="moduleTable">
+        <thead><tr>
+          <th>module</th><th class="num">n</th><th class="num">PF</th>
+          <th class="num">win</th><th class="num">expectancy</th><th class="num">edge/cost</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel col-12">
+    <h2>Walk-forward <span class="note" id="wfNote">in-sample vs out-of-sample, window by window</span></h2>
+    <div class="body flush">
+      <table id="wfTable">
+        <thead><tr>
+          <th class="num">win</th><th class="num">train</th><th class="num">embargo</th><th class="num">test</th>
+          <th class="num">IS PF</th><th class="num">IS n</th>
+          <th class="num">OOS PF</th><th class="num">OOS n</th><th class="num">OOS net</th>
+          <th>result</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel col-8">
+    <h2>Equity curve <span class="note">marked every bar, not only at exits</span></h2>
+    <div class="body flush">
+      <div id="equityChart"></div>
+      <div class="chart-fallback" id="chartFallback" style="display:none"></div>
+    </div>
+  </section>
+
+  <section class="panel col-4">
+    <h2>Data health <span class="note">a stale store is a quiet lie</span></h2>
+    <div class="body flush">
+      <table id="healthTable"><tbody></tbody></table>
+      <div id="warnings"></div>
+    </div>
+  </section>
+
+</div>
+
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

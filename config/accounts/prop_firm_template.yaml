@@ -1,0 +1,73 @@
+# Prop-firm account template - MNQ evaluation shape.
+#
+# EVERY NUMBER BELOW IS A PLACEHOLDER. Replace them with your firm's actual rule
+# set before running the compliance checker against anything real. The checker
+# refuses to run on unverified values (see `verified` below) precisely so that a
+# forgotten placeholder cannot quietly pass a trade that would bust an account.
+
+account:
+  name: "REPLACE_ME"
+  firm: "REPLACE_ME"
+  phase: evaluation        # evaluation | funded
+  starting_balance: 50000.0
+  # Set to true only once you have checked each number against the firm's rules
+  # document. The compliance layer treats false as "do not trade".
+  verified: false
+
+instrument:
+  symbol: MNQ
+  asset_class: future
+  multiplier: 2.0          # $2 per index point
+  tick_size: 0.25          # => $0.50 per tick
+  allow_fractional: false
+
+costs:
+  commission:
+    # Round-turn commission varies by firm and platform. Check yours.
+    per_unit: 0.35
+    exchange_fee_per_unit: 0.35
+
+rules:
+  # --- daily ---
+  daily_loss_limit: 1000.0
+  # Does the daily loss limit measure closed P&L only, or does intraday unrealised
+  # drawdown count? Firms differ, and it changes everything about stop placement.
+  daily_loss_includes_unrealised: true
+  # When the trading day resets, in exchange time.
+  daily_reset_time: "18:00"
+  daily_reset_tz: "America/New_York"
+
+  # --- drawdown ---
+  max_drawdown: 2000.0
+  drawdown_type: trailing        # trailing | static
+  # Trailing off the peak of closed equity, or of intraday equity including
+  # unrealised? The intraday version is much harsher and is the more common trap.
+  trailing_tracks_unrealised: true
+  # Some firms stop trailing once you are up by the drawdown amount.
+  trailing_freezes_at_initial_plus: null
+
+  # --- position ---
+  max_contracts: 5
+  max_concurrent_positions: 2
+  max_correlated_exposure: 1.0   # as a fraction of the risk budget
+
+  # --- consistency ---
+  # Typical rule: no single day may account for more than X% of total profit.
+  consistency_max_day_fraction: 0.30
+  min_trading_days: 5
+
+  # --- sessions ---
+  flatten_before_close: true
+  no_trade_windows:
+    # ASSUMPTION: most firms prohibit holding through high-impact news. Confirm
+    # the exact window - some are 2 minutes either side, some are 5.
+    - reason: "high impact news"
+      minutes_before: 2
+      minutes_after: 2
+
+risk:
+  # Fraction of account equity risked per trade, before any signal confidence scaling.
+  risk_fraction: 0.005
+  stop_multiple: 2.0
+  # Hard ceiling regardless of what the vol-target sizer computes.
+  max_quantity: 5

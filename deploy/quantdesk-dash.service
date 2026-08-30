@@ -1,0 +1,23 @@
+[Unit]
+Description=quantdesk research review dashboard
+After=network-online.target
+
+[Service]
+Type=simple
+User=quantdesk
+WorkingDirectory=/opt/quantdesk
+ExecStart=/opt/quantdesk/.venv/bin/python scripts/run_dash.py 8010
+Restart=on-failure
+RestartSec=10
+
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/quantdesk/data /opt/quantdesk/runs
+
+[Install]
+WantedBy=multi-user.target
