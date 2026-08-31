@@ -100,6 +100,24 @@ ET = dt.timezone(dt.timedelta(hours=-4))
 # --------------------------------------------------------------- assembly
 
 def load_gex() -> dict[dt.date, dict]:
+    """Signal rows keyed by the LAST DATE THEY ARE FULLY KNOWN.
+
+    THE LOOKAHEAD THIS FIXES. A file dated D carries open interest for D-1
+    (published 06:30 on D) and PRICES for D (16:15 and 17:45 on D). The
+    build keys each row by the OI session, D-1, which is honest about where
+    the positioning came from -- but spot and IV are solved from the
+    PRICES, so the row also contains information from the close of D.
+
+    Keying the signal at D-1 and predicting D-1's session therefore used a
+    spot observed a full session AFTER the returns being predicted. "Spot
+    below the flip" then partly means "the market fell into tomorrow's
+    close", which correlates with a negative return for no reason anyone
+    could trade.
+
+    So the row is keyed by `file_date` (D), the first moment every input is
+    in hand, and the screen predicts D+1. Nothing here is knowable later
+    than the close of D.
+    """
     rows: dict[dt.date, dict] = {}
     with GEX_CSV.open(encoding="utf-8") as fh:
         for r in csv.DictReader(fh):
@@ -107,7 +125,7 @@ def load_gex() -> dict[dt.date, dict]:
             if not flip or not r["spot"]:
                 continue
             spot = float(r["spot"])
-            rows[dt.date.fromisoformat(r["session"])] = {
+            rows[dt.date.fromisoformat(r["file_date"])] = {
                 "spot": spot,
                 "flip": float(flip),
                 # POSITIVE means spot is ABOVE the flip: the long-gamma,
@@ -164,7 +182,19 @@ def load_vix() -> dict[dt.date, float]:
 
 def main() -> int:
     gex, es, vix = load_gex(), es_sessions(), load_vix()
-    days = sorted(set(gex) & set(es))
+
+    # Pair signal known by the close of D with the NEXT ES session. The
+    # gap is what makes the test causal; without it the spot inside the
+    # signal has already seen the returns being predicted.
+    es_days = sorted(es)
+    following = {d: nxt for d, nxt in zip(es_days, es_days[1:])}
+    pairs = [(d, following[d]) for d in sorted(gex)
+             if d in following and following[d] in es]
+    if not pairs:
+        print("no signal/session pairs -- check the build output")
+        return 1
+    days = [d for d, _ in pairs]
+    target = dict(pairs)
     if len(days) < 40:
         print(f"only {len(days)} joined sessions -- has the build finished?")
         return 1
@@ -191,24 +221,28 @@ def main() -> int:
     screen = Screen(cost_bp=COST_BP)
 
     # ---------------------------------------------------------------- H1
-    print("H1  PRIMARY: same-session realised vol by regime")
+    print("H1  PRIMARY: NEXT session's realised vol by regime")
     print("    (prior: SHORT gamma realises MORE vol)")
     buckets: dict[str, list[float]] = {}
     for d in ins:
-        buckets.setdefault(regime(d), []).append(es[d]["rv"])
+        buckets.setdefault(regime(d), []).append(es[target[d]]["rv"])
     for name in ("short gamma", "long gamma"):
-        screen.record(name, buckets.get(name, []), unit="vol pts", costed=False)
-    describe_split(buckets, "short gamma", "long gamma", unit="vol pts")
+        screen.record(name, buckets.get(name, []), unit="vol pts",
+                      costed=False, descriptive=True)
+    describe_split(buckets, "short gamma", "long gamma", unit="vol pts",
+                   screen=screen, label="H1 next-session RV")
     print()
 
     # ---------------------------------------------------------------- H2
-    print("H2  intraday range by regime")
+    print("H2  next session's intraday range by regime")
     buckets = {}
     for d in ins:
-        buckets.setdefault(regime(d), []).append(es[d]["range_bp"])
+        buckets.setdefault(regime(d), []).append(es[target[d]]["range_bp"])
     for name in ("short gamma", "long gamma"):
-        screen.record(name + " range", buckets.get(name, []), costed=False)
-    describe_split(buckets, "short gamma", "long gamma")
+        screen.record(name + " range", buckets.get(name, []), costed=False,
+                      descriptive=True)
+    describe_split(buckets, "short gamma", "long gamma", screen=screen,
+                   label="H2 next-session range")
     print()
 
     # ---------------------------------------------------------------- H3
@@ -216,21 +250,24 @@ def main() -> int:
     print("    (prior: LONG gamma is choppier, so LOWER efficiency)")
     buckets = {}
     for d in ins:
-        buckets.setdefault(regime(d), []).append(100.0 * es[d]["efficiency"])
+        buckets.setdefault(regime(d), []).append(100.0 * es[target[d]]["efficiency"])
     for name in ("short gamma", "long gamma"):
         screen.record(name + " eff", buckets.get(name, []), unit="%",
-                      costed=False)
-    describe_split(buckets, "short gamma", "long gamma", unit="%")
+                      costed=False, descriptive=True)
+    describe_split(buckets, "short gamma", "long gamma", unit="%",
+                   screen=screen, label="H3 efficiency")
     print()
 
     # ---------------------------------------------------------------- H4
-    print("H4  direction (two-sided prior; a null is the expected answer)")
+    print("H4  next session's direction (two-sided; a null is expected)")
     buckets = {}
     for d in ins:
-        buckets.setdefault(regime(d), []).append(es[d]["ret_bp"])
+        buckets.setdefault(regime(d), []).append(es[target[d]]["ret_bp"])
     for name in ("short gamma", "long gamma"):
-        screen.record(name + " return", buckets.get(name, []))
-    describe_split(buckets, "short gamma", "long gamma")
+        screen.record(name + " return", buckets.get(name, []),
+                      descriptive=True)
+    describe_split(buckets, "short gamma", "long gamma", screen=screen,
+                   label="H4 direction")
     print()
 
     # ---------------------------------------------------------------- H5
@@ -250,15 +287,17 @@ def main() -> int:
             sub: dict[str, list[float]] = {}
             for d in have_vix:
                 if lo <= vix[d] < hi:
-                    sub.setdefault(regime(d), []).append(es[d]["rv"])
+                    sub.setdefault(regime(d), []).append(es[target[d]]["rv"])
             if min(len(v) for v in sub.values()) < 5 if sub else True:
                 print("    {0}: too few in one regime".format(label))
                 continue
             for name in ("short gamma", "long gamma"):
                 screen.record("{0}, {1}".format(label, name), sub[name],
-                              unit="vol pts", costed=False)
+                              unit="vol pts", costed=False,
+                              descriptive=True)
             print("   ", label)
-            describe_split(sub, "short gamma", "long gamma", unit="vol pts")
+            describe_split(sub, "short gamma", "long gamma", unit="vol pts",
+                           screen=screen, label="H5 within " + label)
 
     print()
     screen.summary()

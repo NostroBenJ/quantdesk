@@ -123,24 +123,33 @@ class Screen:
     def __init__(self, alpha: float = 0.05, cost_bp: float = 0.0):
         self.alpha = alpha
         self.cost_bp = cost_bp
-        self.results: list[tuple[str, dict, str, bool]] = []
+        self.results: list[tuple[str, dict, str, bool, bool]] = []
 
     @property
     def n_tests(self) -> int:
         return len(self.results)
 
-    def threshold(self, tests: int | None = None) -> float:
-        k = max(tests if tests is not None else self.n_tests, 1)
-        return inv_norm(1.0 - self.alpha / k / 2.0)
-
     def record(self, label: str, xs: list[float], unit: str = "bp",
-               costed: bool = True) -> dict | None:
+               costed: bool = True, descriptive: bool = False) -> dict | None:
+        """`descriptive=True` for a bucket's LEVEL rather than a hypothesis.
+
+        The GEX screen made this necessary. It recorded each regime's mean
+        realised vol, and summary() then announced "short gamma, t=+24.71"
+        as clearing Bonferroni -- a statement that realised volatility is
+        greater than zero, which is true of every session ever traded and
+        is not a finding.
+
+        The hypothesis is always the DIFFERENCE between buckets. Levels are
+        context. They still count toward the test total, because looking is
+        looking, but they never appear as discoveries.
+        """
         s = stats(xs)
         if s is None:
             print("  {0:<28} n={1} -- too few".format(label, len(xs)))
-            self.results.append((label, {"n": len(xs), "t": 0.0}, unit, costed))
+            self.results.append((label, {"n": len(xs), "t": 0.0}, unit,
+                                costed, descriptive))
             return None
-        self.results.append((label, s, unit, costed))
+        self.results.append((label, s, unit, costed, descriptive))
         note = ""
         if costed and self.cost_bp and abs(s["mean"]) < self.cost_bp:
             note = "  (below the {0:.1f}bp cost floor)".format(self.cost_bp)
@@ -150,14 +159,33 @@ class Screen:
                   s["lo"], s["hi"], note))
         return s
 
+    def register_difference(self, label: str, w: dict, unit: str) -> None:
+        """Record a between-bucket comparison as a real hypothesis test."""
+        self.results.append((label, {"n": w["n_a"] + w["n_b"],
+                                     "mean": w["diff"], "t": w["t"],
+                                     "lo": w["lo"], "hi": w["hi"]},
+                             unit, False, False))
+
+    @property
+    def n_hypotheses(self) -> int:
+        return sum(1 for *_, desc in self.results if not desc)
+
+    def threshold(self, tests: int | None = None) -> float:
+        # Correct across HYPOTHESES, not across every number printed.
+        # Descriptive levels are context; they are not claims.
+        k = max(tests if tests is not None else self.n_hypotheses, 1)
+        return inv_norm(1.0 - self.alpha / k / 2.0)
+
     def summary(self) -> None:
         thr = self.threshold()
         print("=" * 72)
-        print("{0} tests. Bonferroni threshold at alpha={1}: |t| > {2:.2f}"
-              .format(self.n_tests, self.alpha, thr))
-        survivors = [(lbl, s, unit, costed) for lbl, s, unit, costed
+        print("{0} hypothesis tests ({1} descriptive levels alongside). "
+              "Bonferroni at alpha={2}: |t| > {3:.2f}".format(
+                  self.n_hypotheses,
+                  sum(1 for *_, d in self.results if d), self.alpha, thr))
+        survivors = [(lbl, s, unit, costed) for lbl, s, unit, costed, desc
                      in self.results
-                     if s.get("n", 0) >= 2 and abs(s["t"]) >= thr]
+                     if not desc and s.get("n", 0) >= 2 and abs(s["t"]) >= thr]
         if not survivors:
             print("Nothing clears the corrected threshold.")
         else:
@@ -168,15 +196,16 @@ class Screen:
                     flag = "  <-- but below the cost floor: not a trade"
                 print("  {0:<28} mean {1:>+9.2f} {2:<8} t={3:>+6.2f}{4}"
                       .format(lbl, s["mean"], unit, s["t"], flag))
-        nominal = sum(1 for _, s, _, _ in self.results
-                      if s.get("n", 0) >= 2 and abs(s["t"]) >= 1.96)
+        nominal = sum(1 for _, s, _, _, desc in self.results
+                      if not desc and s.get("n", 0) >= 2 and abs(s["t"]) >= 1.96)
         print("\n{0} would have passed an uncorrected 1.96. {1} tests on pure"
               " noise produce {2:.1f} such hits by construction."
               .format(nominal, self.n_tests, self.n_tests * self.alpha))
 
 
 def describe_split(buckets: dict[str, list[float]], a: str, b: str,
-                   unit: str = "bp") -> None:
+                   unit: str = "bp", screen: "Screen | None" = None,
+                   label: str | None = None) -> None:
     """The difference between two regimes, with its own error bar.
 
     Two buckets each failing to differ from zero can still differ from each
@@ -191,3 +220,10 @@ def describe_split(buckets: dict[str, list[float]], a: str, b: str,
     print("    -> {0} minus {1}: {2:+.2f} {3}  t={4:+.2f}  "
           "95% CI [{5:+.2f}, {6:+.2f}]".format(
               a, b, w["diff"], unit, w["t"], w["lo"], w["hi"]))
+    if screen is not None:
+        # THE DIFFERENCE IS THE HYPOTHESIS. Registering it here is the
+        # whole point: the screen was counting bucket LEVELS and never the
+        # comparison anyone actually cared about, so the correction was
+        # being applied to the wrong set of numbers entirely.
+        screen.register_difference(label or "{0} - {1}".format(a, b),
+                                   w, unit)
