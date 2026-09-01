@@ -14,3 +14,4 @@ runs/
 # The reading list lives in research/notes; the PDFs stay local.
 research/papers/
 spy_vix_term.csv
+vix_curve.csv
