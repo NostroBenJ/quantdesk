@@ -1,0 +1,42 @@
+COT: 608 reports; survey->release lag is 3 days on 590 of 590 rows
+
+476 weekly observations 2017-01-26 .. 2026-07-10
+in-sample 333 (2017-01-26 .. 2023-08-31); holdout 143 SEALED
+overlap factor 4.2; ~79 independent observations
+
+RESOLUTION: Bonferroni at 8 tests needs |t| > 2.73, which with
+~79 independent points needs a partial correlation of about 0.31.
+A null weaker than that means UNDERPOWERED, not absent.
+
+baseline: forward RV ~ VIX     slope +0.8067  t=+6.55  R2=0.3523
+
+========================================================================
+A  TERM STRUCTURE
+========================================================================
+  VIX curve SLOPE (PC2)      coef   -3.1505  t= -2.16  dR2 +0.0364  corr(VIX) -0.17  
+  VIX9D / VIX ratio          coef  +21.7636  t= +1.94  dR2 +0.0295  corr(VIX) +0.52  
+
+========================================================================
+B  POSITIONING
+========================================================================
+  COT net non-comm %OI       coef   +7.7585  t= +0.44  dR2 +0.0016  corr(VIX) -0.18  
+  COT net, 52w z-score       coef   +0.0047  t= +0.01  dR2 +0.0000  corr(VIX) -0.21  
+
+========================================================================
+C  RATES
+========================================================================
+  10Y minus 2Y               coef   -2.2609  t= -1.33  dR2 +0.0142  corr(VIX) -0.09  
+  10Y 21-day change          coef   -1.3976  t= -0.32  dR2 +0.0009  corr(VIX) -0.06  
+
+========================================================================
+D  VRP MEAN REVERSION
+========================================================================
+  VRP now (VIX - trail RV)   coef   -0.0690  t= -0.39  dR2 +0.0013  corr(VIX) -0.23  
+  VRP, 52w z-score           coef   -0.3273  t= -0.39  dR2 +0.0013  corr(VIX) -0.27  
+
+========================================================================
+8 tests at |t| > 2.73. Survivors: NONE
+Would have passed an uncorrected 1.96: VIX curve SLOPE (PC2) -- 0.4 such hits are expected from 8 tests on noise.
+
+Every test held VIX fixed. A variable that only correlates with
+VIX cannot show up here, which is the entire point.
