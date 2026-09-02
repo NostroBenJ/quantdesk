@@ -270,3 +270,79 @@ if __name__ == "__main__":
         else:
             print("GC.F 5m from cache")
             verify_bars(cached, "5m")
+
+
+# ------------------------------------------------- reference datasets
+
+def fetch_cot(symbol: str = "ES", cache: str | None = None) -> list[dict]:
+    """Commitment of Traders, weekly, cached.
+
+    CRITICAL: rows carry BOTH `date` (the Tuesday survey) and
+    `release_date` (the Friday publication). Keying a signal on `date`
+    is three days of lookahead -- the positioning is not public until
+    Friday afternoon. Callers must align on `release_date`; this loader
+    keeps both and refuses to choose for them.
+    """
+    from lse import LSE                                   # noqa: PLC0415
+    path = Path(cache or "cot_{0}_lse.csv".format(symbol.lower()))
+    if path.exists():
+        with path.open(encoding="utf-8") as fh:
+            return list(csv.DictReader(fh))
+    rows = LSE().cot(symbol)
+    if not rows:
+        return []
+    cols = sorted(rows[0].keys())
+    with path.open("w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=cols)
+        w.writeheader()
+        for r in rows:
+            w.writerow({k: r.get(k) for k in cols})
+    return rows
+
+
+def fetch_bond_yields(symbol: str, cache: str | None = None) -> list[dict]:
+    """One government-yield series, paged and cached.
+
+    Same 5,000-row cap as candles, so this pages by date for the same
+    reason and with the same progress assertion.
+    """
+    from lse import LSE                                   # noqa: PLC0415
+    path = Path(cache or "bond_{0}_lse.csv".format(symbol.lower()))
+    if path.exists():
+        with path.open(encoding="utf-8") as fh:
+            return list(csv.DictReader(fh))
+
+    client = LSE()
+    seen: set[str] = set()
+    out: list[dict] = []
+    cursor = "1990-01-01"
+    empties = 0
+    while True:
+        page = client.bond_yields(symbol, start=cursor)
+        fresh = [r for r in (page or []) if r["date"] not in seen]
+        if not fresh:
+            empties += 1
+            if empties >= MAX_EMPTY_PAGES:
+                break
+            # Step a decade; these series are daily but sparse early on.
+            cursor = "{0}-01-01".format(int(cursor[:4]) + 10)
+            continue
+        empties = 0
+        for r in fresh:
+            seen.add(r["date"])
+            out.append(r)
+        newest = max(r["date"] for r in fresh)
+        if newest <= cursor and len(fresh) < PAGE_ROWS:
+            break
+        cursor = newest
+        time.sleep(PAUSE_SECONDS)
+
+    out.sort(key=lambda r: r["date"])
+    if out:
+        cols = sorted(out[0].keys())
+        with path.open("w", newline="", encoding="utf-8") as fh:
+            w = csv.DictWriter(fh, fieldnames=cols)
+            w.writeheader()
+            for r in out:
+                w.writerow({k: r.get(k) for k in cols})
+    return out
