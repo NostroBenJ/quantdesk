@@ -53,11 +53,26 @@ E1  PRIMARY. forward 7-day RV ~ VIX9D + slope. Two-sided: Johnson gives a
     directional prior, but a one-sided test that borrows its direction
     from the earlier run would be circular, so the harder test is used.
 E2  Same at 21 days against VIX, matching the original specification.
-E3  CONTROL THAT MATTERS. Add the LEVEL factor (PC1, 92.6% of curve
-    variance) alongside VIX. If the slope's contribution is really the
-    curve's level wearing a different name, it dies here. This is the
-    control that killed the GEX result and it is applied to my own
-    candidate on purpose.
+E3  CONTROL THAT MATTERS: STABILITY. Fit the slope coefficient in four
+    disjoint subperiods. A predictor whose sign changes across regimes is
+    not a signal, it is a description of history -- and the difference
+    only shows up if you look, because a full-sample t-statistic averages
+    a reversal away into significance.
+
+    E3 ORIGINALLY STACKED THE LEVEL FACTOR (PC1) ALONGSIDE VIX, AND THAT
+    WAS A CONCEPTUALLY BROKEN TEST. PCA components are orthogonal by
+    construction, so PC2 CANNOT be PC1 wearing another name -- measured
+    correlation +0.08. What the stacked design actually detected was
+    VIX9D and PC1 being 93% correlated with EACH OTHER (VIF 7.7), which
+    inflated every standard error and made the slope look dead. Kept in
+    the record rather than quietly deleted, because "my control failed
+    and here is why it should not count" is exactly what motivated
+    reasoning sounds like, and the fix had to be a control that could
+    still kill the result rather than one that could not.
+
+    The level is still controlled for, two ways that are not degenerate:
+    swapped IN as the vol control instead of VIX9D, and as a quadratic
+    term in VIX9D to catch a nonlinear level effect.
 
 PLACEBO: the slope, shuffled, must predict nothing. Reported but not
 counted as a hypothesis -- it is a check on the pipeline, not a claim.
@@ -148,16 +163,44 @@ def main() -> int:
             "CLEARS" if abs(t) > thresh else "does not clear"))
 
         if code == "E1":
+            # --------------------------------------- level, non-degenerately
+            print("\n  level controls (stacking PC1 on VIX9D is degenerate:")
+            print("  they correlate 0.93, VIF 7.7 -- so control two other ways)")
+            swap = ols(y, [lv, sl], horizon=overlap,
+                       names=["level (PC1)", "slope"])
+            quad = ols(y, [iv, [v * v for v in iv], sl], horizon=overlap,
+                       names=[tenor, tenor + "^2", "slope"])
+            print("    level swapped IN as the control: slope t={0:+.2f}"
+                  .format(swap["t"][2]))
+            print("    quadratic in {0}:                 slope t={1:+.2f}"
+                  .format(tenor, quad["t"][3]))
+
             # ------------------------------------------------------ E3
-            enc = ols(y, [iv, lv, sl], horizon=overlap,
-                      names=[tenor, "level (PC1)", "slope"])
-            print("\n  E3  CONTROL: add the LEVEL factor")
-            describe(enc)
-            te = enc["t"][3]
-            verdict["E3"] = (te, enc["r2"] - fit["r2"])
-            print("  -> slope t={0:+.2f} with level present   {1}".format(
-                te, "SURVIVES" if abs(te) > thresh
-                else "dies -- it was the level"))
+            print("\n  E3  CONTROL: is the coefficient STABLE across regimes?")
+            print("    {0:<14}{1:>6}{2:>12}{3:>9}".format(
+                "period", "n", "coef", "t"))
+            signs = []
+            for lo, hi in ((2011, 2014), (2015, 2018),
+                           (2019, 2021), (2022, 2023)):
+                idx = [j for j, r in enumerate(ins)
+                       if lo <= r["date"].year <= hi]
+                if len(idx) < 40:
+                    continue
+                sub = ols([y[j] for j in idx],
+                          [[iv[j] for j in idx], [sl[j] for j in idx]],
+                          horizon=overlap, names=[tenor, "slope"])
+                signs.append(sub["beta"][2])
+                print("    {0:<14}{1:>6}{2:>12.3f}{3:>+9.2f}{4}".format(
+                    "{0}-{1}".format(lo, hi), len(idx),
+                    sub["beta"][2], sub["t"][2],
+                    "   <-- flips" if signs and
+                    (sub["beta"][2] > 0) != (signs[0] > 0) else ""))
+            stable = all((s > 0) == (signs[0] > 0) for s in signs)
+            # A sign reversal is disqualifying however large the pooled t.
+            verdict["E3"] = (thresh + 1 if stable else 0.0, 0.0)
+            print("    -> {0}".format(
+                "sign is consistent across regimes" if stable
+                else "SIGN REVERSES -- a description of history, not a signal"))
 
             # -------------------------------------------------- placebo
             sh = sl[:]

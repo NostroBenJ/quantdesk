@@ -1,0 +1,55 @@
+VIX curve 3,937 sessions 2011-01-04 .. 2026-08-31
+in-sample ends 2023-08-31; everything after is SEALED
+
+========================================================================
+E1  VIX9D vs 7-day forward RV   <-- PRIMARY
+========================================================================
+  in-sample 638 weekly points, overlap 1.4, ~456 independent
+  resolution: |t| > 2.39 needs partial corr ~0.11
+
+  baseline R2 0.5687
+    term                coef        se        t
+    intercept        -1.5734    0.7607    -2.07
+    VIX9D            +0.8920    0.0390   +22.85
+    slope            -2.3834    0.5705    -4.18
+    R2 0.5847   n 638   effective independent n 456
+  -> slope t=-4.18  dR2 +0.0160   CLEARS
+
+  level controls (stacking PC1 on VIX9D is degenerate:
+  they correlate 0.93, VIF 7.7 -- so control two other ways)
+    level swapped IN as the control: slope t=-12.46
+    quadratic in VIX9D:                 slope t=-4.56
+
+  E3  CONTROL: is the coefficient STABLE across regimes?
+    period             n        coef        t
+    2011-2014        201      -2.678    -2.47
+    2015-2018        202      -1.116    -0.73
+    2019-2021        151      -4.366    -3.35
+    2022-2023         84       5.003    +2.42   <-- flips
+    -> SIGN REVERSES -- a description of history, not a signal
+
+  placebo: shuffled slope t=+0.86, dR2 +0.0007  silent, as it must be
+
+========================================================================
+E2  VIX vs 21-day forward RV
+========================================================================
+  in-sample 638 weekly points, overlap 4.2, ~152 independent
+  resolution: |t| > 2.39 needs partial corr ~0.20
+
+  baseline R2 0.3759
+    term                coef        se        t
+    intercept        +0.4316    1.6294    +0.26
+    VIX              +0.7831    0.0829    +9.44
+    slope            -2.8120    1.0278    -2.74
+    R2 0.4054   n 638   effective independent n 152
+  -> slope t=-2.74  dR2 +0.0294   CLEARS
+
+========================================================================
+3 hypotheses at |t| > 2.39. Clears: E1, E2
+  E1  t=-4.18  dR2 +0.0160
+  E2  t=-2.74  dR2 +0.0294
+  E3  t=+0.00  dR2 +0.0000
+
+E1 did not clear in-sample with its control. The holdout is
+NOT spent -- there is nothing to confirm, and spending it on a
+candidate that failed its own nomination would waste it.
