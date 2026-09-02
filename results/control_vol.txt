@@ -1,0 +1,81 @@
+3,937 sessions 2011-01-04 .. 2026-08-31
+
+========================================================================
+VIX vs 21-day forward realized vol   <-- PRIMARY
+========================================================================
+  3,894 overlapping observations, ~185 independent
+
+  C1  variance risk premium
+      mean +3.60 vol pts   t=+6.66   (16.1% of sessions negative)
+    PASS C1: implied exceeds subsequent realized by +3.60 pts, t=+6.66
+
+  C2/C3/C4  forward RV regressed on VIX
+    term                coef        se        t
+    intercept        -0.2400    1.5195    -0.16
+    VIX              +0.8151    0.0783   +10.41
+    R2 0.3690   n 3,894   effective independent n 185
+    PASS C2: slope +0.8151, t=+10.41
+    PASS C3: slope 0.8151 < 1 -- VIX overreacts, as documented
+    PASS C4: R2 0.3690
+
+  C5  PLACEBO: the same series, shuffled
+    term                coef        se        t
+    intercept       +14.0342    1.9124    +7.34
+    shuffled VIX     +0.0297    0.0985    +0.30
+    R2 0.0005   n 3,894   effective independent n 185
+    PASS C5: shuffled t=+0.30, R2=0.0005 -- predicts nothing, as it must
+
+  C6  overlap correction
+      naive SE 0.01708 -> corrected 0.07829   ratio 4.583 (sqrt(21) = 4.583)
+    PASS C6: naive errors are 4.58x too tight
+
+  C7  encompassing: does VIX survive against trailing RV?
+    term                coef        se        t
+    intercept        -0.1442    1.6078    -0.09
+    VIX              +0.7952    0.1343    +5.92
+    trailing RV      +0.0182    0.1000    +0.18
+    R2 0.3691   n 3,894   effective independent n 185
+    PASS C7: VIX t=+5.92 controlling for trailing vol; trailing t=+0.18
+
+========================================================================
+VIX9D vs 7-day forward realized vol
+========================================================================
+  3,908 overlapping observations, ~558 independent
+
+  C1  variance risk premium
+      mean +3.56 vol pts   t=+12.14   (20.0% of sessions negative)
+    PASS C1: implied exceeds subsequent realized by +3.56 pts, t=+12.14
+
+  C2/C3/C4  forward RV regressed on VIX9D
+    term                coef        se        t
+    intercept        -2.4648    0.6914    -3.56
+    VIX9D            +0.9372    0.0358   +26.19
+    R2 0.5514   n 3,908   effective independent n 558
+    PASS C2: slope +0.9372, t=+26.19
+    PASS C3: slope 0.9372 < 1 -- VIX overreacts, as documented
+    PASS C4: R2 0.5514
+
+  C5  PLACEBO: the same series, shuffled
+    term                coef        se        t
+    intercept       +13.7795    1.0323   +13.35
+    shuffled VIX9D   +0.0091    0.0534    +0.17
+    R2 0.0001   n 3,908   effective independent n 558
+    PASS C5: shuffled t=+0.17, R2=0.0001 -- predicts nothing, as it must
+
+  C6  overlap correction
+      naive SE 0.01353 -> corrected 0.03578   ratio 2.646 (sqrt(7) = 2.646)
+    PASS C6: naive errors are 2.65x too tight
+
+  C7  encompassing: does VIX9D survive against trailing RV?
+    term                coef        se        t
+    intercept        -2.4827    0.6923    -3.59
+    VIX9D            +0.9597    0.0574   +16.71
+    trailing RV      -0.0259    0.0516    -0.50
+    R2 0.5516   n 3,908   effective independent n 558
+    PASS C7: VIX9D t=+16.71 controlling for trailing vol; trailing t=-0.50
+
+========================================================================
+POSITIVE CONTROL: 14 of 14 criteria passed
+
+The pipeline reproduces the known implied-vs-realized
+relationship. Novel results from it are now interpretable.
