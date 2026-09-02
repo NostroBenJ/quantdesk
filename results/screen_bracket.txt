@@ -1,0 +1,37 @@
+in-sample 506,604 bars (2016-05-01 .. 2023-07-28); holdout SEALED
+22,878 kill-zone pullbacks, 22,878 matched random controls
+
+Simulating the REAL trade: first touch of stop or target, using
+intrabar highs and lows. Both-in-one-bar books the LOSS.
+
+======================================================================
+STOP SLIPPAGE 0.00 points
+======================================================================
+B1/B2 pullback   n=22,481  expectancy -0.1609R  t=-16.88  win rate 33.7%
+B3    random     n=22,391  expectancy -0.3540R  t=-5.16  win rate 33.2%
+      -> pullback minus random: +0.1931R  t=+2.79
+B4    ADX>=25 -0.1462R (n=13,404)  ADX<25 -0.1827R (n=9,077)
+      -> ADX adds: +0.0365R  t=+1.88
+
+======================================================================
+STOP SLIPPAGE 0.81 points   <-- measured on the live fill
+======================================================================
+B1/B2 pullback   n=22,481  expectancy -0.6454R  t=-50.15  win rate 33.7%
+B3    random     n=22,391  expectancy -1.5611R  t=-3.82  win rate 33.2%
+      -> pullback minus random: +0.9157R  t=+2.24
+B4    ADX>=25 -0.6103R (n=13,404)  ADX<25 -0.6971R (n=9,077)
+      -> ADX adds: +0.0868R  t=+3.30
+
+======================================================================
+STOP SLIPPAGE 1.62 points
+======================================================================
+B1/B2 pullback   n=22,481  expectancy -1.1298R  t=-66.72  win rate 33.7%
+B3    random     n=22,391  expectancy -2.7681R  t=-3.69  win rate 33.2%
+      -> pullback minus random: +1.6383R  t=+2.18
+B4    ADX>=25 -1.0745R (n=13,404)  ADX<25 -1.2115R (n=9,077)
+      -> ADX adds: +0.1370R  t=+3.95
+
+An expectancy of 0.0000R is break-even. The 2:1 geometry gives
+~33% wins to ANY entry, so the pullback's win rate alone means
+nothing -- B3, against random bars in the same windows, is the
+test that can actually fail.
