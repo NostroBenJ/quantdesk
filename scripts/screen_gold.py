@@ -62,7 +62,7 @@ sys.path.insert(0, str(ROOT))
 
 from quantdesk.data.research_stats import Screen, describe_split  # noqa: E402
 
-GC_CSV = Path(r"C:\Users\jontr\dev\shadow-trade\gc_1h.csv")
+GC_CSV = Path((str(Path.home()) + r"\dev\shadow-trade\gc_1h.csv"))
 HOLDOUT_FRACTION = 0.30
 COST_BP = 1.3
 

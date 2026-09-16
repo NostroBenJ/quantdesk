@@ -82,7 +82,7 @@ from quantdesk.data.sources.databento_glbx import (  # noqa: E402
 )
 
 GEX_CSV = ROOT / "data" / "spx_gex_daily.csv"
-ES_GLOB = r"C:\Users\jontr\Downloads\databento_spx\es\*.zst"
+ES_GLOB = (str(Path.home()) + r"\Downloads\databento_spx\es\*.zst")
 VOL_CSV = ROOT / "spy_vix_term.csv"
 
 HOLDOUT_FRACTION = 0.30

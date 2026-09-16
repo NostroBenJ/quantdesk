@@ -40,7 +40,7 @@ per month, which no realistic return covers. Options in order of what I'd pick:
 | option | cost | notes |
 |---|---|---|
 | **Oracle Cloud Always Free** | $0 | 4 ARM cores / 24 GB, genuinely free indefinitely. Best fit. |
-| Existing AWS Lightsail | $3.50–5/mo | You already have `LightsailDefaultKey-us-east-1.pem`. Simplest if the instance is already running and paid for. |
+| Existing AWS Lightsail | $3.50–5/mo | Simplest if the instance is already running and paid for. |
 | GitHub Actions cron | $0 | Elegant for the recorder alone (it is a 1-second job), but SQLite in git ages badly and there is nowhere to host the dashboard. |
 | Home box / Raspberry Pi | $0 | Fine, but it is the sleeping-laptop failure again unless it genuinely stays on. |
 

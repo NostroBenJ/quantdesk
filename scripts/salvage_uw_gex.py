@@ -34,7 +34,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 DEFAULT_CAPTURE = Path(
-    r"C:\Users\jontr\dev\NYAM Terminal\engine\data_store\capture")
+    (str(Path.home()) + r"\dev\NYAM Terminal\engine\data_store\capture"))
 DEFAULT_OUT = Path(__file__).resolve().parents[1] / "data" / "uw_gex_archive.csv"
 
 FIELDS = [

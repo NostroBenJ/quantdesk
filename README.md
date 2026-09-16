@@ -212,10 +212,17 @@ Every such assumption in the code is tagged `ASSUMPTION (...)` — grep for it.
 
 ## Next
 
-1. Send me your prop firm's rule document → `risk/` checks. The *wording* of the
+1. Prop-firm rule documents → `risk/` checks. The *wording* of the
    trailing-drawdown definition matters more than the number.
-2. Paste the GEX dashboard code → `data/options.py` + the GEX regime module.
-3. Then signal modules, in the order you want them benchmarked.
+2. GEX regime module on top of `data/options.py`.
+3. Then signal modules, each benchmarked against the controls above.
 
 Nothing in step 3 is worth writing before steps 1 and 2, and none of it was worth
 writing before this.
+
+The strategy screens run since then live in `scripts/screen_*.py`, with outputs in
+`results/`. Each test was pre-registered in its own commit before the result was
+seen, so `git log --oneline` shows the pre-registration and the result separately.
+
+Market data is not included (licensed vendors: Databento, London Strategic Edge,
+CBOE DataShop). The loaders in `quantdesk/data/sources/` show the expected formats.

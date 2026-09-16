@@ -40,7 +40,7 @@ from quantdesk.data.bars import PartialBarPolicy, normalise
 from quantdesk.data.sources.csv_source import CsvBarSource
 from quantdesk.signals.base import SignalModule
 
-CSV = Path(r"C:\Users\jontr\Downloads\AMEX_SPY, 5_3d354.csv")
+CSV = Path((str(Path.home()) + r"\Downloads\AMEX_SPY, 5_3d354.csv"))
 TF = Timeframe.parse("5m")
 SPY = InstrumentSpec("SPY", AssetClass.ETF, multiplier=1.0, tick_size=0.01)
 CONFIG = EngineConfig(initial_equity=100_000.0, volatility_lookback=20, signal_lookback=100)

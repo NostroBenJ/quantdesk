@@ -51,7 +51,7 @@ STYPE = "parent"
 START = "2010-06-06"
 END = "2026-08-30"
 
-OUT_DIR = Path(r"C:\Users\jontr\Downloads\databento_spx\gc_full")
+OUT_DIR = Path((str(Path.home()) + r"\Downloads\databento_spx\gc_full"))
 
 #: Refuse to spend more than this without a human looking at it again.
 #: Calibrated from the ES pull (~$33); anything far outside means the query

@@ -49,7 +49,7 @@ from quantdesk.data.sources.databento_opra import (  # noqa: E402
     build_chain, implied_spot, load_definitions, load_session, merge_roots,
 )
 
-DOWNLOADS = Path(r"C:\Users\jontr\Downloads")
+DOWNLOADS = Path((str(Path.home()) + r"\Downloads"))
 WORK = DOWNLOADS / "databento_spx" / "all"
 
 #: job_id -> (root, schema)
